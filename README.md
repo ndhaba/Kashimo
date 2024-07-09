@@ -1,4 +1,4 @@
 # Kashimo
 A Minecraft bot for farming
 
-All it does it crash currently
+All it does is crash currently
