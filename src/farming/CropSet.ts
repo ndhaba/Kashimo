@@ -29,6 +29,24 @@ export default class CropSet {
   }
 
   /**
+   * Adds a crop
+   * @param block The block
+   * @param data The associated crop data
+   */
+  add(block: Block, data: crops.Data){
+    var key = block.position.toString();
+    // create the crop object if it doesn't exist
+    if(!this.blocks.has(key)){
+      this.blocks.set(key, new Crop(block.position, data));
+    }
+    // update the crop and get the result
+    var result = this.blocks.get(key)!.update(null, block);
+    if(result instanceof Vec3){
+      this.harvestable.set(result.toString(), result);
+    }
+  }
+
+  /**
    * Clears the set
    */
   clear(): void {
@@ -37,7 +55,30 @@ export default class CropSet {
   }
 
   /**
-   * Checks if the block or position is stored as a crop or harvestable
+   * Checks if the block or position is marked as harvestable
+   * @param block The block or position vector
+   */
+  canHarvest(block: Block | Vec3): boolean {
+    if("name" in block){
+      block = block.position;
+    }
+    return this.harvestable.has(block.toString());
+  }
+
+  /**
+   * Deletes a block
+   * @param block The block
+   */
+  delete(block: Block){
+    // get the key
+    var key = block.position.toString();
+    // remove from harvestable and blocks
+    this.blocks.delete(key);
+    this.harvestable.delete(key);
+  }
+
+  /**
+   * Checks if the block or position is stored as a crop
    * @param block The block, or block position
    * @returns True or false
    */
@@ -45,7 +86,7 @@ export default class CropSet {
     if("name" in block){
       block = block.position;
     }
-    return this.blocks.has(block.toString()) || this.harvestable.has(block.toString());
+    return this.blocks.has(block.toString());
   }
 
   /**
@@ -68,81 +109,45 @@ export default class CropSet {
   }
 
   /**
-   * Attempts to add or update a crop based on this block
+   * Updates a crop with the given block
    * @param block The block
-   * @returns Whether or not a crop was updated
+   * @param data The associated crop data
    */
-  use(block: Block): boolean {
-    // keys are strings
-    var poss = block.position.toString();
-    // do we have this as an additional block?
-    if(this.harvestable.has(poss)){
-      if(block.name == "air"){
-        this.harvestable.delete(poss);
-        let b1 = block.position.offset(0, -1, 0).toString();
-        if(this.blocks.get(b1)?.data.growth == crops.GrowthType.Stalk){
-          this.blocks.get(b1)!.update(block);
-        }
-      }
-    }
-    // do we already have this as a crop?
-    if(this.blocks.has(poss)){
-      // get the crop and try to update
-      let crop = this.blocks.get(poss)!;
-      let result = crop.update(block);
-      // if it's ready to harvest...
-      if(result instanceof Vec3){
-        this.harvestable.set(result.toString(), result);
-      // if the update failed
-      }else if(result === false){
-        // if the crop no longer exists...
-        if(!crop.exists){
-          this.blocks.delete(poss);
-          return true;
-        }
-        // no update
-        return false;
-      }
-      // success!
-      return true;
-    }
-    // is this actually a crop?
-    let data: crops.Data;
-    if((data = crops.plants[block.name]) === undefined){
-      return false;
-    }
-    // variables for crop
-    var crop: Crop;
-    var result: Vec3 | boolean;
-    // handle crop addition differently depending on type
+  update(oldBlock: Block | null, newBlock: Block, data: crops.Data){
     switch(data.growth){
+      // if this is a in-place crop or stem...
       case crops.GrowthType.InPlace:
       case crops.GrowthType.Stem: {
-        crop = new Crop(block);
-        result = crop.update(block);
-        break;
-      }
-
-      case crops.GrowthType.Stalk: {
-        let b1 = this.bot.blockAt(block.position.offset(0, -1, 0))!;
-        if(crops.stalkGround.has(b1.name)){
-          crop = new Crop(block);
-        }else if(this.blocks.has(b1.position.toString())){
-          crop = this.blocks.get(b1.position.toString())!;
-        }else{
-          crop = new Crop(b1);
+        let key = newBlock.position.toString();
+        // create the crop object if it doesn't exist
+        if(!this.blocks.has(key)){
+          this.blocks.set(key, new Crop(newBlock.position, data));
         }
-        result = crop.update(block);
-        break;
+        // update the crop and get the result
+        var result = this.blocks.get(key)!.update(oldBlock, newBlock);
+        if(result instanceof Vec3){
+          this.harvestable.set(result.toString(), result);
+        }
+        return;
+      }
+      // if this is a stalk crop...
+      case crops.GrowthType.Stalk: {
+        // remove from harvestable first
+        this.harvestable.delete(newBlock.position.toString());
+        // get the position and key of the origin block
+        let pos = newBlock.position.offset(0, -1, 0);
+        let key = pos.toString();
+        // create the crop if it doesn't exist
+        if(!this.blocks.has(key)){
+          this.blocks.set(key, new Crop(pos, data));
+        }
+        // update the crop and get the result
+        var result = this.blocks.get(key)!.update(oldBlock, newBlock);
+        if(result instanceof Vec3){
+          this.harvestable.set(result.toString(), result);
+        }
+        return;
       }
     }
-    // add crop
-    this.blocks.set(crop.position.toString(), crop);
-    // if it's ready to harvest...
-    if(result instanceof Vec3){
-      this.harvestable.set(result.toString(), result);
-    }
-    // success!
-    return true;
   }
 }

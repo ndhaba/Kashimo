@@ -14,12 +14,9 @@ export default class Crop {
    * Constructs a crop object
    * @param block The block
    */
-  constructor(block: Block){
-    if(!crops.plants[block.name]){
-      throw new Error("Attempted to create a Crop object from a non-plant");
-    }
-    this.data = crops.plants[block.name];
-    this.position = block.position;
+  constructor(position: Vec3, data: crops.Data){
+    this.data = data;
+    this.position = position;
     
     this._exists = true;
     this.age = 0;
@@ -48,10 +45,11 @@ export default class Crop {
 
   /**
    * Updates the crop
-   * @param block The block
+   * @param oldBlock The old block
+   * @param newBlock The new block
    * @returns Whether or not the crop was updated
    */
-  update(block: Block): Vec3 | boolean {
+  update(oldBlock: Block | null, newBlock: Block): Vec3 | boolean {
     // this crop must already exist
     if(this._exists === false){
       return false;
@@ -60,14 +58,10 @@ export default class Crop {
     switch(this.data.growth){
       // does this crop grow in place (e.g. wheat, potato, beetroots)?
       case crops.GrowthType.InPlace: {
-        if(!block.position.equals(this.position)){
-          return false;
-        }
-        if(crops.plants[block.name] !== this.data){
-          return this._exists = false;
-        }
-        let properties = block.getProperties();
+        // update the age
+        let properties = newBlock.getProperties();
         this.age = properties.age as number;
+        // if the age is high enough, we're ready to harvest
         if(this.age == this.data.age){
           return this.position;
         }
@@ -76,13 +70,9 @@ export default class Crop {
       
       // does this crop grow to an adjacent block (e.g. melon, pumpkin)?
       case crops.GrowthType.Stem: {
-        if(!block.position.equals(this.position)){
-          return false;
-        }
-        if(crops.plants[block.name] !== this.data){
-          return this._exists = false;
-        }
-        let properties = block.getProperties();
+        // get the block's properties
+        let properties = newBlock.getProperties();
+        // if the facing property is present, then the stem is connected to another block we need to harvest
         if(properties.facing){
           this.age = this.data.age + 1;
           switch(properties.facing){
@@ -91,6 +81,7 @@ export default class Crop {
             case "west": return this.position.offset(-1, 0, 0);
             case "east": return this.position.offset(1, 0, 0);
           }
+        // otherwise, just update the age
         }else if(properties.age){
           this.age = properties.age as number;
         }
@@ -99,20 +90,17 @@ export default class Crop {
 
       // does this crop grow upward (e.g. sugar cane, bamboo)?
       case crops.GrowthType.Stalk: {
-        if(block.position.equals(this.position)){
-          if(crops.plants[block.name] !== this.data){
-            return this._exists = false;
-          }
+        // we only care about the block above
+        if(!newBlock.position.equals(this.position.offset(0, 1, 0))){
           return false;
         }
-        if(!block.position.equals(this.position.offset(0, 1, 0))){
-          return false;
-        }
-        this.age = crops.plants[block.name] === this.data ? 1 : 0;
+        // crop age is dependent on if this block (1 higher) is an extension of this crop or just air
+        this.age = crops.plants[newBlock.name] === this.data ? 1 : 0;
         if(this.age === 0){
           return true;
         }
-        return block.position;
+        // return the block position back if it's an extension
+        return newBlock.position;
       }
     }
   }

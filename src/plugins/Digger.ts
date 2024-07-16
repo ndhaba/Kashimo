@@ -82,7 +82,7 @@ export default function digger(bot: mineflayer.Bot){
       try {
         await bot.pathfinder.goto(new goals.GoalBlock(entity.position.x, entity.position.y, entity.position.z));
       }catch(err){
-        if(!entity || !entity.position){
+        if(entity && entity.id !== undefined){
           droppedItems.delete(entity.id);
         }
       }

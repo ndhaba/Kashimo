@@ -74,10 +74,8 @@ export const crops: Data[] = [
   }
 ];
 
-export let plants: {[x: string]: Data} = {};
-export let harvest: {[x: string]: Data} = {};
-
-export let stalkGround: Set<string> = new Set(["grass_block", "sand", "dirt"]);
+export let plants: {[x: string]: Data | undefined} = {};
+export let harvest: {[x: string]: Data | undefined} = {};
 
 for(let crop of crops){
   if(crop.plant instanceof Array){
