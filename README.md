@@ -11,7 +11,8 @@ Planting and replanting is functional. However, crops are only detected via bloc
 > This bot is very rudimentary right now. Configuration options will be available in the future.
 
 ## TODO
-- [ ] Use entity despawn events instead of arbitrary windows for item collection
+- [x] Use entity despawn events instead of arbitrary windows for item collection
+- [ ] Stop item collection if inventory is full
 - [ ] Auto-detect adjacent crops
 - [ ] Asynchronously search for crops
 - [ ] Storage...

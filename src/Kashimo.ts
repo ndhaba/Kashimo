@@ -1,6 +1,5 @@
 import CropRegistry from "./farming/CropRegistry";
-import digger from "./plugins/Digger";
-import farmer from "./plugins/Farmer";
+import Harvester from "./plugins/Harvester";
 import mcdata from "minecraft-data";
 import mineflayer from "mineflayer";
 import Logger from "./utils/Logger";
@@ -19,11 +18,10 @@ export default class Kashimo {
   constructor(options: mineflayer.BotOptions){
     this.bot = mineflayer.createBot(options);
     this.bot.loadPlugin(pathfinder);
-    this.bot.loadPlugin(digger);
-    this.bot.loadPlugin(farmer);
 
     this.bot.once("spawn", async () => {
       this.bot.mcdata = mcdata(this.bot.version);
+      this.bot.harvest = new Harvester(this.bot);
       this.configure();
       this.bot.cropRegistry = new CropRegistry(this.bot);
 
@@ -32,9 +30,9 @@ export default class Kashimo {
       while(true){
         let nearest = this.bot.cropRegistry.nearest();
         if(nearest){
-          await this.bot.harvestCrop(nearest);
-        }else if(this.bot.getBlockDropCount() > 0){
-          await this.bot.collectBlockDrops();
+          await this.bot.harvest.harvest(nearest);
+        }else if(this.bot.harvest.getBlockDropCount() > 0){
+          await this.bot.harvest.collectAllDrops();
         }else{
           await timeout(1000);
         }
