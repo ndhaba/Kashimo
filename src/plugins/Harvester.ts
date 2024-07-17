@@ -57,9 +57,16 @@ export default class Harvester {
             try {
               await this.bot.pathfinder.goto(new goals.GoalBlock(entity.position.x, entity.position.y, entity.position.z));
             }catch(err){
-              Logger.Error("Harvester.collectAllDrops() failed", err);
+              Logger.Error("Harvester.collectAllDrops(): Pathfinder failed", err);
               return;
             }
+          }
+          // make sure there's space for the item
+          await this.waitForDropMeta(id);
+          let item = entity.getDroppedItem()!;
+          if(this.bot.inv.getRemainingSpace(item.type) < item.stackSize){
+            Logger.Error("Harvester.collectAllDrops(): Not enough space for item");
+            return;
           }
           // wait for the item to be collected
           await this.waitForDropCollect(id);
@@ -80,14 +87,15 @@ export default class Harvester {
    * @returns The number of items to collect (not guaranteed to reach minimum)
    */
   async collectItem(item: string | number, minimum: number): Promise<number> {
-    // convert item name to id
-    if(typeof item == "string"){
-      item = this.bot.mcdata.itemsByName[item].id;
-    }
     // the minimum number of the item we need to exit
-    let requirement = this.bot.inventory.count(item, null) + minimum;
+    let requirement = this.bot.inv.count(item) + minimum;
     // loop over block drops
-    while(this.entities.size != 0 && requirement > this.bot.inventory.count(item, null)){
+    while(this.entities.size != 0 && requirement > this.bot.inv.count(item)){
+      // exit early if there's not enough space
+      if(this.bot.inv.getRemainingSpace(item) == 0){
+        Logger.Error(`Harvester.collectItem(): Not enough space for item`);
+        return this.bot.inv.count(item) - requirement + minimum;
+      }
       let earlyBreak = false;
       // true or false
       for(let condition = 0; condition <= 1; ++condition){
@@ -107,8 +115,8 @@ export default class Harvester {
             try {
               await this.bot.pathfinder.goto(new goals.GoalBlock(entity.position.x, entity.position.y, entity.position.z));
             }catch(err){
-              Logger.Error("Harvester.collectItem() failed", err);
-              return this.bot.inventory.count(item, null) - requirement + minimum;
+              Logger.Error("Harvester.collectItem(): Pathfinder failed", err);
+              return this.bot.inv.count(item) - requirement + minimum;
             }
           }
           // wait for the item to be collected
@@ -127,7 +135,7 @@ export default class Harvester {
       break;
     }
     // return the number of items the bot has collected
-    return this.bot.inventory.count(item, null) - requirement + minimum;
+    return this.bot.inv.count(item) - requirement + minimum;
   }
 
   /**

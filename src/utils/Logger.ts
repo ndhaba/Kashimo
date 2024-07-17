@@ -15,13 +15,10 @@ function _log(...args: any[]): void {
 
 namespace Logger {
   export function Error(...args: any[]): void {
-    _log("\x1b[31merr\x1b[0m ", "\x1b[38;2;255;105;105m", ...args);
+    _log("\x1b[31merr\x1b[0m", "\x1b[38;2;255;105;105m", ...args);
   }
   export function Info(...args: any[]): void {
     _log("\x1b[38;5;27minfo\x1b[0m", "\x1b[38;5;255m", ...args);
-  }
-  export function Time(name: string, time: number): void {
-    Info(name + ": \x1b[38;2;0;255;0m" + time + "ms");
   }
   export function Warn(...args: any[]): void {
     _log("\x1b[33mwarn\x1b[0m", "\x1b[38;5;228m", ...args);
