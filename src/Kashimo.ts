@@ -6,15 +6,18 @@ import mineflayer from "mineflayer";
 import PlayerInventory from "./plugins/PlayerInventory";
 
 import { Movements, pathfinder } from "mineflayer-pathfinder";
+import { Vec3 } from "vec3";
 
 function timeout(ms: number){
-  return new Promise<void>(function(resolve, reject){
+  return new Promise<void>(function(resolve){
     setTimeout(() => resolve(), ms);
   });
 }
 
 export default class Kashimo {
   public bot: mineflayer.Bot;
+
+  private lastCollectAttempt: number = 0;
 
   constructor(options: mineflayer.BotOptions){
     this.bot = mineflayer.createBot(options);
@@ -29,19 +32,29 @@ export default class Kashimo {
 
       Logger.Info("Bot has spawned in!");
 
-      var lastCollectAttempt = Date.now();
       while(true){
-        let nearest = this.bot.cropRegistry.nearest();
-        if(nearest){
-          await this.bot.harvest.harvest(nearest);
-        }else if(this.bot.harvest.getBlockDropCount() > 0 && Date.now() >= lastCollectAttempt + 1000){
-          await this.bot.harvest.collectAllDrops();
-          lastCollectAttempt = Date.now();
-        }else{
-          await timeout(1000);
-        }
+        await this.botLoop();
       }
     });
+  }
+
+  /**
+   * The bot loop
+   */
+  private async botLoop(){
+    let nearest = this.bot.cropRegistry.nearest();
+    let nearestVector: Vec3 | void;
+    while(undefined !== (nearestVector = nearest.next().value)){
+      if(true === await this.bot.harvest.harvest(nearestVector)){
+        return;
+      }
+    }
+    if(this.bot.harvest.getBlockDropCount() > 0 && Date.now() >= this.lastCollectAttempt + 1000){
+      await this.bot.harvest.collectAllDrops();
+      this.lastCollectAttempt = Date.now();
+    }else{
+      await timeout(1000);
+    }
   }
 
   /**

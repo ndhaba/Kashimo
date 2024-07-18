@@ -75,21 +75,21 @@ export function getChunkPosition(position: Vec3): Vec3 {
   return position.clone().divide(CHUNK_SIZE).floor();
 }
 
-export function* getRadialChunks(position: Vec3, chunk: Vec3 = getChunkPosition(position)) {
-  yield [chunk];
-  var i = 0;
-  while(true){
-    ++i;
-    let res: Vec3[] = [];
-    for(let x = -i; x <= i; ++x){
-      for(let y = -i; y <= i; ++y){
+/**
+ * Creates a generator that radiates chunks from an initial position
+ * @param position The position
+ * @param chunk The chunk
+ */
+export function* generateRadialChunks(position: Vec3, chunk: Vec3 = getChunkPosition(position)) {
+  for(let i = 0; ; ++i){
+    for(let y = -i; y <= i; ++y){
+      for(let x = -i; x <= i; ++x){
         for(let z = -i; z <= i; ++z){
           if(x == -i || x == i || y == -i || y == i || z == -i || z == i){
-            res.push(chunk.offset(x, y, z));
+            yield chunk.offset(x, y, z);
           }
         }
       }
     }
-    yield res;
   }
 }

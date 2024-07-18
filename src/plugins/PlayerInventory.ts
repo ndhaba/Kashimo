@@ -19,7 +19,7 @@ export default class PlayerInventory {
       if(item === null || item.type !== id){
         continue;
       }
-      count += item.stackSize;
+      count += item.count;
     }
     return count;
   }
@@ -46,7 +46,7 @@ export default class PlayerInventory {
       if(item!.type !== data.id){
         continue;
       }
-      count += data.stackSize - item!.stackSize;
+      count += data.stackSize - item!.count;
     }
     return count;
   }

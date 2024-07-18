@@ -90,22 +90,32 @@ export default class CropSet {
   }
 
   /**
-   * Returns the nearest harvestable block vector, or undefined if there are none
+   * Returns every harvestable vector, in order of proximity to the player
    */
-  nearest(): Vec3 | undefined {
+  nearest(): Vec3[] {
     if(this.harvestable.size == 0){
-      return;
+      return [];
     }
-    let nearest: Vec3 = this.bot.entity.position;
-    let distance: number = Infinity;
-    for(let [_, vec] of this.harvestable){
+    var vectors: Vec3[] = [];
+    var distances: number[] = [];
+    for(let vec of this.harvestable.values()){
+      let low = 0;
       let dist = vec.distanceTo(this.bot.entity.position);
-      if(dist < distance){
-        nearest = vec;
-        distance = dist;
+      let high = vectors.length - 1;
+      while(low < high){
+        let mid = Math.floor((low + high) / 2);
+        if(dist < distances[mid]){
+          high = mid;
+        }else if(dist > distances[mid]){
+          low = mid + 1;
+        }else{
+          low = high = mid;
+        }
       }
+      vectors.splice(low, 0, vec);
+      distances.splice(low, 0, dist);
     }
-    return nearest;
+    return vectors;
   }
 
   /**

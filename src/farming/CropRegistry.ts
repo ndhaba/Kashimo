@@ -26,65 +26,33 @@ export default class CropRegistry {
   /**
    * Returns the vector to the nearest harvestable crop
    */
-  nearest(): Vec3 | undefined {
+  *nearest(): Generator<Vec3, void, undefined> {
     if(this.chunks.size == 0){
       return;
     }
-    var distance: number = Infinity;
-    var nearest: Vec3 | undefined;
+    // initial variables
     var remaining = new Set(this.chunks.keys());
-    var radialGenerator = ChunkMath.getRadialChunks(this.bot.entity.position);
-    do {
-      let nextChunks = radialGenerator.next().value!;
-      for(let chunk of nextChunks){
-        let key = chunk.toString();
-        if(!remaining.has(key)){
-          continue;
-        }
-        remaining.delete(key);
-        let n = this.chunks.get(key)!.nearest();
-        if(n !== undefined){
-          nearest = n;
-          distance = n.distanceTo(this.bot.entity.position);
-          break;
-        }
-      }
-    }
-    while(nearest === undefined && remaining.size > this.chunks.size / 2);
-    if(nearest === undefined){
-      for(let key of remaining){
-        remaining.delete(key);
-        let n = this.chunks.get(key)!.nearest();
-        if(n !== undefined){
-          nearest = n;
-          distance = n.distanceTo(this.bot.entity.position);
-          break;
-        }
-      }
-      if(nearest === undefined){
-        return;
-      }
-    }
-
-    var additionalChunks = ChunkMath.getAdditionalSearchChunks(this.bot.entity.position, distance);
-    for(let chunk of additionalChunks){
-      let key = chunk.toString();
-      if(!remaining.has(key)){
+    var radialGenerator = ChunkMath.generateRadialChunks(this.bot.entity.position);
+    // radially search for nearby chunks
+    while(remaining.size > this.chunks.size / 2){
+      let chunkKey = (radialGenerator.next().value as Vec3).toString();
+      // skip if the chunk has already been scanned, or if it doesn't exist
+      if(!remaining.has(chunkKey)){
         continue;
       }
-      remaining.delete(key);
-      let n = this.chunks.get(key)!.nearest();
-      if(n === undefined){
+      remaining.delete(chunkKey);
+      // skip if the chunk is empty
+      let chunk = this.chunks.get(chunkKey)!;
+      if(chunk.size == 0){
         continue;
       }
-      let d = n.distanceTo(this.bot.entity.position);
-      if(d < distance){
-        nearest = n;
-        distance = d;
-      }
+      // get the nearest harvestables and return them
+      yield* chunk.nearest();
     }
-
-    return nearest;
+    // just pick random chunks at this point
+    for(let key of remaining){
+      yield* this.chunks.get(key)!.nearest();
+    }
   }
   
   /**

@@ -10,6 +10,7 @@ import Logger from "../utils/Logger";
 import * as crops from "../farming/CropData";
 
 const ITEM_DROP_WINDOW = 200;
+const MAX_ITEM_DESPAWN_WAIT = 2000;
 const MAX_ITEM_PICKUP_DISTANCE = 0.4;
 
 /**
@@ -57,14 +58,13 @@ export default class Harvester {
             try {
               await this.bot.pathfinder.goto(new goals.GoalBlock(entity.position.x, entity.position.y, entity.position.z));
             }catch(err){
-              Logger.Error("Harvester.collectAllDrops(): Pathfinder failed", err);
-              return;
+              continue;
             }
           }
           // make sure there's space for the item
           await this.waitForDropMeta(id);
           let item = entity.getDroppedItem()!;
-          if(this.bot.inv.getRemainingSpace(item.type) < item.stackSize){
+          if(this.bot.inv.getRemainingSpace(item.type) < item.count){
             Logger.Error("Harvester.collectAllDrops(): Not enough space for item");
             return;
           }
@@ -91,11 +91,6 @@ export default class Harvester {
     let requirement = this.bot.inv.count(item) + minimum;
     // loop over block drops
     while(this.entities.size != 0 && requirement > this.bot.inv.count(item)){
-      // exit early if there's not enough space
-      if(this.bot.inv.getRemainingSpace(item) == 0){
-        Logger.Error(`Harvester.collectItem(): Not enough space for item`);
-        return this.bot.inv.count(item) - requirement + minimum;
-      }
       let earlyBreak = false;
       // true or false
       for(let condition = 0; condition <= 1; ++condition){
@@ -107,20 +102,28 @@ export default class Harvester {
           }
           // is the item the right ID?
           await this.waitForDropMeta(id);
-          if(entity.getDroppedItem()!.type != item){
+          let itemStack = entity.getDroppedItem()!;
+          if(itemStack.type != item){
             continue;
+          }
+          // do we have space?
+          if(this.bot.inv.getRemainingSpace(item) == 0){
+            Logger.Error(`Harvester.collectItem(): Not enough space for item`);
+            return this.bot.inv.count(item) - requirement + minimum;
           }
           // move to the item (second iteration)
           if(condition == 1){
             try {
               await this.bot.pathfinder.goto(new goals.GoalBlock(entity.position.x, entity.position.y, entity.position.z));
             }catch(err){
-              Logger.Error("Harvester.collectItem(): Pathfinder failed", err);
-              return this.bot.inv.count(item) - requirement + minimum;
+              continue;
             }
           }
           // wait for the item to be collected
-          await this.waitForDropCollect(id);
+          if(false === await this.waitForDropCollect(id)){
+            Logger.Error(`Harvester.collectItem(): Failed to collect stack after ${MAX_ITEM_DESPAWN_WAIT}ms`);
+            return this.bot.inv.count(item) - requirement + minimum;
+          }
           earlyBreak = true;
           break;
         }
@@ -159,7 +162,6 @@ export default class Harvester {
       // try to mine again
       mineResult = await this.mine(position);
       if(!mineResult){
-        // FIXME if the crop is unreachable, the bot will be stuck trying to reach it
         return false;
       }
     }
@@ -229,14 +231,21 @@ export default class Harvester {
    * Waits for a block drop to be collected
    * @param id The ID of the entity
    */
-  waitForDropCollect(id: number): Promise<void> {
+  waitForDropCollect(id: number): Promise<boolean> {
     if(!this.entities.has(id)){
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
+    let eventName = "despawn:" + id;
     return new Promise(resolve => {
-      this.emitter.once("despawn:" + id, () => {
-        resolve();
-      });
+      // true = success, false = fail
+      let resolver = () => resolve(true);
+      // remove listener and fail if max time is passed
+      setTimeout(() => {
+        this.emitter.removeListener(eventName, resolver);
+        resolve(false);
+      }, MAX_ITEM_DESPAWN_WAIT);
+      // wait for event
+      this.emitter.once(eventName, resolver);
     });
   }
 
@@ -308,6 +317,7 @@ export default class Harvester {
     if(entity.entityType != 54){
       return;
     }
+    let item = entity.getDroppedItem()!;
     if(this.entities.has(entity.id)){
       this.emitter.emit("metadata:" + entity.id);
     }

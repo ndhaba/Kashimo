@@ -13,7 +13,7 @@ Planting and replanting is functional. However, crops are only detected via bloc
 ## TODO
 - [x] Use entity despawn events instead of arbitrary windows for item collection
 - [x] Stop item collection if inventory is full
-- [ ] Implement failsafe for unreachable item drops/blocks
+- [x] Implement failsafe for unreachable item drops/blocks
 - [ ] Auto-detect adjacent crops
 - [ ] Asynchronously search for crops
 - [ ] Storage...
