@@ -14,6 +14,7 @@ Planting and replanting is functional. However, crops are only detected via bloc
 - [x] Use entity despawn events instead of arbitrary windows for item collection
 - [x] Stop item collection if inventory is full
 - [x] Implement failsafe for unreachable item drops/blocks
-- [ ] Auto-detect adjacent crops
-- [ ] Asynchronously search for crops
-- [ ] Storage...
+- [ ] Scan for nearby chests and deposit
+- [ ] Cache chest contents
+- [ ] Recognize designations (item frames, sign with "Kashimo" on it)
+- [ ] Eat...

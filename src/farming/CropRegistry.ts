@@ -126,6 +126,8 @@ export default class CropRegistry {
     // delete the chunk set if it's empty
     if(chunkSet.size == 0){
       this.chunks.delete(chunkPos.toString());
+    }else if(!chunkSet.scanned){
+      this.scanSet(chunkSet);
     }
   }
 
@@ -147,6 +149,8 @@ export default class CropRegistry {
     // delete the chunk set if it's empty
     if(chunkSet.size == 0){
       this.chunks.delete(chunkPos.toString());
+    }else if(!chunkSet.scanned){
+      this.scanSet(chunkSet);
     }
   }
 
@@ -186,6 +190,8 @@ export default class CropRegistry {
     // delete the chunk set if it's empty
     if(chunkSet.size == 0){
       this.chunks.delete(chunkPos.toString());
+    }else if(!chunkSet.scanned){
+      this.scanSet(chunkSet);
     }
   }
 
@@ -235,10 +241,14 @@ export default class CropRegistry {
   private getCropSet(position: Vec3): CropSet {
     var chunkKey = position.toString();
     if(!this.chunks.has(chunkKey)){
-      this.chunks.set(chunkKey, new CropSet(this.bot));
+      this.chunks.set(chunkKey, new CropSet(this.bot, position));
     }
     return this.chunks.get(chunkKey)!;
-  } 
+  }
+
+  private scanSet(set: CropSet){
+    set.scan();
+  }
 }
 
 
