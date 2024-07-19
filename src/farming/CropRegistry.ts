@@ -1,40 +1,73 @@
-
-import CropSet from "./CropSet";
+import Crop from "./Crop";
+import ChunkRegistry from "../storage/ChunkRegistry";
 
 import { Bot } from "mineflayer";
 import { Block } from "prismarine-block";
+import { PCChunk } from "prismarine-chunk";
 import { Vec3 } from "vec3";
 
-import * as crops from "./CropData";
 import * as ChunkMath from "../utils/ChunkMath";
+import * as crops from "./CropData";
 
-export default class CropRegistry {
-  private bot: Bot;
-  private chunks: Map<string, CropSet>;
+export default class CropRegistry implements ChunkRegistry {
+  private crops: Map<string, Map<string, Crop>>;
+  private harvestables: Map<string, Map<string, Vec3>>;
 
   /**
    * Constructs a crop registry
    * @param bot The bot
    */
-  constructor(bot: Bot){
-    this.bot = bot;
-    this.chunks = new Map();
+  constructor(private bot: Bot){
+    this.crops = new Map();
+    this.harvestables = new Map();
+  }
 
-    this.bot.on("blockUpdate", this.onBlockUpdate.bind(this));
+  /**
+   * Checks the block
+   * @param chunk The chunk
+   * @param chunkPos The chunk's position
+   * @param x The x position in chunk
+   * @param y The y position in column
+   * @param z The z position in chunk
+   */
+  checkBlock(chunk: PCChunk, chunkPos: Vec3, x: number, y: number, z: number): void {
+    var pos = new Vec3(chunkPos.x * 16 + x, y, chunkPos.z * 16 + z);
+    var stateId = chunk.getBlockStateId(pos);
+    var name = this.bot.mcdata.blocksByStateId[stateId].name;
+    if(!crops.plants[name]){
+      return;
+    }
+    var key = pos.toString();
+    var block = chunk.getBlock(pos);
+    var chunkKey = chunkPos.toString();
+    if(this.crops.get(chunkKey)?.has(key) || this.harvestables.get(chunkKey)?.has(key)){
+      return;
+    }
+    block.position = pos;
+    this.onBlockUpdate(null, block);
+  }
+
+  /**
+   * Checks a pallete entry
+   * @param stateId The block state ID
+   * @returns Whether or not it indicates this registry can make use of the chunk
+   */
+  checkPalette(stateId: number): boolean {
+    return crops.plants[this.bot.mcdata.blocksByStateId[stateId].name] !== undefined;
   }
 
   /**
    * Returns the vector to the nearest harvestable crop
    */
   *nearest(): Generator<Vec3, void, undefined> {
-    if(this.chunks.size == 0){
+    if(this.harvestables.size == 0){
       return;
     }
     // initial variables
-    var remaining = new Set(this.chunks.keys());
+    var remaining = new Set(this.harvestables.keys());
     var radialGenerator = ChunkMath.generateRadialChunks(this.bot.entity.position);
     // radially search for nearby chunks
-    while(remaining.size > this.chunks.size / 2){
+    while(remaining.size > this.harvestables.size / 2){
       let chunkKey = (radialGenerator.next().value as Vec3).toString();
       // skip if the chunk has already been scanned, or if it doesn't exist
       if(!remaining.has(chunkKey)){
@@ -42,25 +75,25 @@ export default class CropRegistry {
       }
       remaining.delete(chunkKey);
       // skip if the chunk is empty
-      let chunk = this.chunks.get(chunkKey)!;
+      let chunk = this.harvestables.get(chunkKey)!;
       if(chunk.size == 0){
         continue;
       }
       // get the nearest harvestables and return them
-      yield* chunk.nearest();
+      yield* sortVectors(chunk, this.bot.entity.position);
     }
     // just pick random chunks at this point
     for(let key of remaining){
-      yield* this.chunks.get(key)!.nearest();
+      yield* sortVectors(this.harvestables.get(key)!, this.bot.entity.position);
     }
   }
-  
+
   /**
-   * Event handler for when blocks are updated
+   * Event handler for block updates
    * @param oldBlock The old block
    * @param newBlock The new block
    */
-  private onBlockUpdate(oldBlock: Block | null, newBlock: Block){
+  onBlockUpdate(oldBlock: Block | null, newBlock: Block): void {
     // get the old and new block crop data
     var oldData = oldBlock === null ? undefined : crops.plants[oldBlock.name];
     var newData = crops.plants[newBlock.name];
@@ -69,19 +102,19 @@ export default class CropRegistry {
       // it might've been a harvest block (stem crops only)
       let oldHarvestData = oldBlock === null ? undefined : crops.harvest[oldBlock.name];
       if(oldHarvestData !== undefined && oldHarvestData !== newData){
-        this.onHarvestBlockRemove(oldBlock!, oldHarvestData);
+        this.deleteHarvestable(newBlock.position);
       }
       // if the new block is a crop...
       if(newData !== undefined){
-        this.onCropBlockPlace(oldBlock, newBlock, newData);
+        this.onCropBlockPlace(newBlock, newData);
       }
     }
     // if the new block isn't a crop
     else if(oldData !== newData){
-      this.onCropBlockRemove(oldBlock!, newBlock, oldData);
+      this.onCropBlockRemove(newBlock, oldData);
       // if new data exists, then this crop was replaced with another
       if(newData !== undefined){
-        this.onCropBlockPlace(oldBlock, newBlock, newData);
+        this.onCropBlockPlace(newBlock, newData);
       }
     }
     // this was an update
@@ -92,42 +125,45 @@ export default class CropRegistry {
 
   /**
    * Event handler for when a crop block is placed
-   * @param oldBlock The old block
-   * @param newBlock The new block
+   * @param block The block
    * @param data The associated crop data
    */
-  private onCropBlockPlace(oldBlock: Block | null, newBlock: Block, data: crops.Data){
-    // the crop set
-    var chunkPos: Vec3 = ChunkMath.getChunkPosition(newBlock.position);
-    var chunkSet: CropSet;
+  private onCropBlockPlace(block: Block, data: crops.Data){
     // special procedure for stalk-type crops (sugar cane, bamboo)
     if(data.growth == crops.GrowthType.Stalk){
-      let b1 = this.bot.blockAt(newBlock.position.offset(0, -1, 0));
-      let b2 = this.bot.blockAt(newBlock.position.offset(0, -2, 0));
+      let b1p = block.position.offset(0, -1, 0);
+      let b2p = block.position.offset(0, -2, 0);
+      let b1 = this.bot.blockAt(b1p);
+      let b2 = this.bot.blockAt(b2p);
       // we only need to know if stalks are 2 blocks tall
-      if(b2 === null || crops.plants[b2.name] === data){return}
+      if(b2 === null || crops.plants[b2.name] === data){
+        return;
+      }
       // is the block under the same crop?
       else if(b1 !== null && crops.plants[b1.name] === data){
-        chunkPos = ChunkMath.getChunkPosition(newBlock.position.offset(0, -1, 0));
-        chunkSet = this.getCropSet(chunkPos);
-        chunkSet.update(oldBlock, newBlock, data);
+        let crop = this.getCrop(b1p);
+        if(crop === undefined){
+          this.onCropBlockPlace(block, data);
+          crop = this.getCrop(b1p)!;
+        }
+        let res = crop.update(block);
+        if(res instanceof Vec3){
+          this.addHarvestable(res);
+        }
       }
       // if not...
       else {
-        chunkSet = this.getCropSet(chunkPos);
-        chunkSet.add(newBlock, data);
+        this.addCrop(new Crop(block.position, data));
       }
     }
     // for other crops
     else {
-      chunkSet = this.getCropSet(chunkPos);
-      chunkSet.add(newBlock, data);
-    }
-    // delete the chunk set if it's empty
-    if(chunkSet.size == 0){
-      this.chunks.delete(chunkPos.toString());
-    }else if(!chunkSet.scanned){
-      this.scanSet(chunkSet);
+      let crop = new Crop(block.position, data);
+      let res = crop.update(block);
+      if(res instanceof Vec3){
+        this.addHarvestable(res);
+      }
+      this.addCrop(crop);
     }
   }
 
@@ -141,116 +177,163 @@ export default class CropRegistry {
     if(data.growth == crops.GrowthType.Stalk){
       return;
     }
-    // the crop set
-    var chunkPos: Vec3 = ChunkMath.getChunkPosition(block.position);
-    var chunkSet: CropSet = this.getCropSet(chunkPos);
-    // update
-    chunkSet.update(null, block, data);
-    // delete the chunk set if it's empty
-    if(chunkSet.size == 0){
-      this.chunks.delete(chunkPos.toString());
-    }else if(!chunkSet.scanned){
-      this.scanSet(chunkSet);
+    // update the crop
+    let crop = this.getCrop(block.position);
+    if(crop === undefined){
+      return this.onCropBlockPlace(block, data);
+    }
+    // add harvestable if needed
+    let result = crop.update(block);
+    if(result instanceof Vec3){
+      this.addHarvestable(result);
     }
   }
 
   /**
    * Event handler for when a crop block is removed
-   * @param oldBlock The old block
-   * @param newBlock The new block
+   * @param block The block
    * @param data The associated crop data
    */
-  private onCropBlockRemove(oldBlock: Block, newBlock: Block, data: crops.Data){
-    // the crop set
-    var chunkPos: Vec3 = ChunkMath.getChunkPosition(newBlock.position);
-    var chunkSet: CropSet;
+  private onCropBlockRemove(block: Block, data: crops.Data){
+    this.deleteHarvestable(block.position);
     // special procedure for stalk-type crops (sugar cane, bamboo)
     if(data.growth == crops.GrowthType.Stalk){
-      let b1 = this.bot.blockAt(newBlock.position.offset(0, -1, 0));
-      let b2 = this.bot.blockAt(newBlock.position.offset(0, -2, 0));
+      let b1p = block.position.offset(0, -1, 0);
+      let b2p = block.position.offset(0, -2, 0);
+      let b1 = this.bot.blockAt(b1p);
+      let b2 = this.bot.blockAt(b2p);
       // we only need to know if stalks are 2 blocks tall
-      if(b2 === null || crops.plants[b2.name] === data){return}
+      if(b2 === null || crops.plants[b2.name] === data){
+        return;
+      }
       // is the block under the same crop?
       else if(b1 !== null && crops.plants[b1.name] === data){
-        chunkPos = ChunkMath.getChunkPosition(newBlock.position.offset(0, -1, 0));
-        chunkSet = this.getCropSet(chunkPos);
-        chunkSet.update(oldBlock, newBlock, data);
+        let crop = this.getCrop(b1p);
+        if(crop === undefined){
+          this.onCropBlockPlace(block, data);
+          crop = this.getCrop(b1p)!;
+        }
+        crop.update(block);
+        return;
       }
-      // if not...
-      else {
-        chunkSet = this.getCropSet(chunkPos);
-        chunkSet.delete(newBlock);
-      }
+      // use normal procedure if the stalk is 1 block
     }
     // for other crops
-    else {
-      chunkSet = this.getCropSet(chunkPos);
-      chunkSet.delete(newBlock);
-    }
-    // delete the chunk set if it's empty
-    if(chunkSet.size == 0){
-      this.chunks.delete(chunkPos.toString());
-    }else if(!chunkSet.scanned){
-      this.scanSet(chunkSet);
-    }
-  }
-
-  /**
-   * Event handler for when a harvest block is broken (stem crops only)
-   * @param block The block
-   * @param data The associated crop data
-   */
-  private onHarvestBlockRemove(block: Block, data: crops.Data){
-    // only applies to stem crops
-    if(data.growth != crops.GrowthType.Stem){
+    let crop = this.getCrop(block.position);
+    if(crop === undefined){
       return;
     }
-    // get the XZ position of the harvest block in chunk
-    let chunk = ChunkMath.getChunkPosition(block.position);
-    let x = block.position.x - (chunk.x * 16);
-    let z = block.position.z - (chunk.z * 16);
-    // normal check
-    this.checkHarvestBlock(true, block, chunk);
-    // boundary checks
-    this.checkHarvestBlock(x == 0, block, chunk.offset(-1, 0, 0));
-    this.checkHarvestBlock(x == 15, block, chunk.offset(1, 0, 0));
-    this.checkHarvestBlock(z == 0, block, chunk.offset(0, 0, -1));
-    this.checkHarvestBlock(z == 15, block, chunk.offset(0, 0, 1));
+    this.deleteCrop(crop);
   }
 
   /**
-   * Checks if an adjacent chest contains the given harvest block
-   * @param condition The condition (this function will exit if false)
-   * @param block The block
-   * @param chunk The position of the block's chunk
+   * Adds a crop
+   * @param crop The crop
    */
-  private checkHarvestBlock(condition: boolean, block: Block, chunk: Vec3){
-    if(condition){
-      let c = chunk.toString();
-      if(this.chunks.has(c) && this.chunks.get(c)!.canHarvest(block.position)){
-        this.chunks.get(c)!.delete(block);
+  private addCrop(crop: Crop){
+    var chunkKey = ChunkMath.getChunkPosition(crop.position).toString();
+    if(!this.crops.has(chunkKey)){
+      this.crops.set(chunkKey, new Map());
+    }
+    this.crops.get(chunkKey)!.set(crop.position.toString(), crop);
+  }
+
+  /**
+   * Adds a harvestable
+   * @param position The position
+   */
+  private addHarvestable(position: Vec3) {
+    var chunkKey = ChunkMath.getChunkPosition(position).toString();
+    if(!this.harvestables.has(chunkKey)){
+      this.harvestables.set(chunkKey, new Map());
+    }
+    this.harvestables.get(chunkKey)!.set(position.toString(), position);
+  }
+
+  /**
+   * Deletes a crop
+   * @param crop The crop
+   * @returns Whether or not a crop was removed
+   */
+  private deleteCrop(crop: Crop): boolean {
+    // check if the chunk is being stored
+    var chunkKey = ChunkMath.getChunkPosition(crop.position).toString();
+    if(!this.crops.has(chunkKey)){
+      return false;
+    }
+    // remove the crop
+    var key = crop.position.toString();
+    var chunk = this.crops.get(chunkKey)!;
+    var result = chunk.delete(key);
+    // if the chunk has no crops
+    if(chunk.size == 0){
+      this.crops.delete(chunkKey);
+    }
+    return result;
+  }
+
+  /**
+   * Deletes a harvestable
+   * @param position The position
+   * @returns Whether or not a harvestable was removed
+   */
+  private deleteHarvestable(position: Vec3): boolean {
+    // check if the chunk is being stored
+    var chunkKey = ChunkMath.getChunkPosition(position).toString();
+    if(!this.harvestables.has(chunkKey)){
+      return false;
+    }
+    // remove the harvestable
+    var key = position.toString();
+    var chunk = this.harvestables.get(chunkKey)!;
+    var result = chunk.delete(key);
+    // if the chunk has no harvestables
+    if(chunk.size == 0){
+      this.harvestables.delete(chunkKey);
+    }
+    return result;
+  }
+
+  /**
+   * Tries to get the crop at the given position
+   * @param position The position
+   */
+  private getCrop(position: Vec3): Crop | undefined {
+    return this.crops.get(ChunkMath.getChunkPosition(position).toString())?.get(position.toString());
+  }
+};
+
+/**
+ * Sorts a map storing vectors by proximity to another position vector
+ * @param map The map 
+ * @param position The position
+ * @returns The vectors, sorted
+ */
+function sortVectors(map: Map<string, Vec3>, position: Vec3): Vec3[] {
+  if(map.size == 0){
+    return [];
+  }
+  var vectors: Vec3[] = [];
+  var distances: number[] = [];
+  for(let vec of map.values()){
+    let low = 0;
+    let dist = vec.distanceTo(position);
+    let high = vectors.length - 1;
+    while(low < high){
+      let mid = Math.floor((low + high) / 2);
+      if(dist < distances[mid]){
+        high = mid;
+      }else if(dist > distances[mid]){
+        low = mid + 1;
+      }else{
+        low = high = mid;
       }
     }
+    vectors.splice(low, 0, vec);
+    distances.splice(low, 0, dist);
   }
-  
-  /**
-   * Gets a crop set, or creates it if it doesn't exist
-   * @param position The position
-   * @returns The crop set
-   */
-  private getCropSet(position: Vec3): CropSet {
-    var chunkKey = position.toString();
-    if(!this.chunks.has(chunkKey)){
-      this.chunks.set(chunkKey, new CropSet(this.bot, position));
-    }
-    return this.chunks.get(chunkKey)!;
-  }
-
-  private scanSet(set: CropSet){
-    set.scan();
-  }
+  return vectors;
 }
-
 
 declare module "mineflayer" {
   interface Bot {

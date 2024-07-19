@@ -1,3 +1,4 @@
+import ChunkLoader from "./storage/ChunkLoader";
 import CropRegistry from "./farming/CropRegistry";
 import Harvester from "./plugins/Harvester";
 import Logger from "./utils/Logger";
@@ -7,6 +8,8 @@ import PlayerInventory from "./plugins/PlayerInventory";
 
 import { Movements, pathfinder } from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
+
+import * as ChunkMath from "./utils/ChunkMath";
 
 function timeout(ms: number){
   return new Promise<void>(function(resolve){
@@ -25,12 +28,18 @@ export default class Kashimo {
 
     this.bot.once("spawn", async () => {
       this.bot.mcdata = mcdata(this.bot.version);
+      
+      this.bot.chunkLoader = new ChunkLoader(this.bot);
+      this.bot.cropRegistry = new CropRegistry(this.bot);
+      this.bot.chunkLoader.inject(this.bot.cropRegistry);
+
       this.bot.inv = new PlayerInventory(this.bot);
       this.bot.harvest = new Harvester(this.bot);
       this.configure();
-      this.bot.cropRegistry = new CropRegistry(this.bot);
 
       Logger.Info("Bot has spawned in!");
+
+      this.scanLoop();
 
       while(true){
         await this.botLoop();
@@ -53,6 +62,13 @@ export default class Kashimo {
       await this.bot.harvest.collectAllDrops();
       this.lastCollectAttempt = Date.now();
     }else{
+      await timeout(1000);
+    }
+  }
+
+  private async scanLoop(){
+    while(true){
+      this.bot.chunkLoader.scan(ChunkMath.getChunkPosition(this.bot.entity.position));
       await timeout(1000);
     }
   }
