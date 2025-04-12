@@ -1,6 +1,7 @@
 use azalea::{
     blocks::properties::{
-        BeetrootsAge, CarrotsAge, FacingCardinal, MelonStemAge, PotatoesAge, PumpkinStemAge, SugarCaneAge, WheatAge
+        BeetrootsAge, CarrotsAge, FacingCardinal, MelonStemAge, PotatoesAge, PumpkinStemAge,
+        SugarCaneAge, WheatAge,
     },
     protocol::packets::game::ClientboundBlockUpdate,
     BlockPos, Client,
@@ -13,7 +14,7 @@ pub enum CropSpecies {
     Carrot,
     PumpkinStem,
     MelonStem,
-	SugarCane
+    SugarCane,
 }
 
 pub struct Crop {
@@ -117,30 +118,37 @@ impl Crop {
                 },
             })
         }
-		// Sugar Cane
-		else if let Some(_age) = update.block_state.property::<SugarCaneAge>() {
-			let below_one_pos = update.pos.down(1);
-			let below_two_pos = update.pos.down(2);
-			let (below_one, below_two) = {
-				let world = client.world();
-				let lock = world.read();
-				(lock.get_block_state(&below_one_pos), lock.get_block_state(&below_two_pos))
-			};
-			if below_one.is_none() {
-				return None;
-			}
-			if below_one.unwrap().property::<SugarCaneAge>().is_none() {
-				return Some(Crop { pos: below_one_pos, species: CropSpecies::SugarCane, harvest_position: None });
-			}
-			if below_two.is_none() || below_two.unwrap().property::<SugarCaneAge>().is_none() {
-				return None;
-			}
-			Some(Crop {
-				pos: below_one_pos,
-				species: CropSpecies::SugarCane,
-				harvest_position: Some(update.pos)
-			})
-		}
+        // Sugar Cane
+        else if let Some(_age) = update.block_state.property::<SugarCaneAge>() {
+            let below_one_pos = update.pos.down(1);
+            let below_two_pos = update.pos.down(2);
+            let (below_one, below_two) = {
+                let world = client.world();
+                let lock = world.read();
+                (
+                    lock.get_block_state(&below_one_pos),
+                    lock.get_block_state(&below_two_pos),
+                )
+            };
+            if below_one.is_none() {
+                return None;
+            }
+            if below_one.unwrap().property::<SugarCaneAge>().is_none() {
+                return Some(Crop {
+                    pos: below_one_pos,
+                    species: CropSpecies::SugarCane,
+                    harvest_position: None,
+                });
+            }
+            if below_two.is_none() || below_two.unwrap().property::<SugarCaneAge>().is_none() {
+                return None;
+            }
+            Some(Crop {
+                pos: below_one_pos,
+                species: CropSpecies::SugarCane,
+                harvest_position: Some(update.pos),
+            })
+        }
         // Otherwise
         else {
             None
