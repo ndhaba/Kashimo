@@ -1,5 +1,6 @@
 use kashimo::{KResult, Kashimo};
 
+mod crop;
 mod kashimo;
 
 #[tokio::main]
