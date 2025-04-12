@@ -1,19 +1,25 @@
 use std::sync::Arc;
 
-use azalea::{protocol::packets::game::ClientboundGamePacket, Account, Client, Event};
+use azalea::{
+    protocol::packets::game::ClientboundGamePacket, world::Instance, Account, Client, Event,
+};
+use lock_api::RwLock;
+use parking_lot::RawRwLock;
 use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
 use crate::error::KResult;
 
 pub struct Kashimo {
     client: Client,
+    world: Arc<RwLock<RawRwLock, Instance>>,
 }
 
 impl Kashimo {
     pub async fn connect(host: &str) -> KResult<(Arc<Kashimo>, UnboundedReceiver<Event>)> {
         let account = Account::offline("Kashimo");
         let (client, receiver) = Client::join(&account, host).await?;
-        let kashimo = Arc::new(Kashimo { client });
+        let world = (&client).world();
+        let kashimo = Arc::new(Kashimo { client, world });
         Ok((kashimo, receiver))
     }
 

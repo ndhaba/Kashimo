@@ -1,11 +1,16 @@
+use std::sync::Arc;
+
 use azalea::{
     blocks::properties::{
         BeetrootsAge, CarrotsAge, FacingCardinal, MelonStemAge, PotatoesAge, PumpkinStemAge,
         SugarCaneAge, WheatAge,
     },
     protocol::packets::game::ClientboundBlockUpdate,
-    BlockPos, Client,
+    world::Instance,
+    BlockPos,
 };
+use lock_api::RwLock;
+use parking_lot::RawRwLock;
 
 pub enum CropSpecies {
     Wheat,
@@ -33,7 +38,10 @@ fn adjacent_position(pos: BlockPos, facing: FacingCardinal) -> BlockPos {
 }
 
 impl Crop {
-    pub fn from_block_update(client: &Client, update: ClientboundBlockUpdate) -> Option<Self> {
+    pub fn from_block_update(
+        world: &Arc<RwLock<RawRwLock, Instance>>,
+        update: ClientboundBlockUpdate,
+    ) -> Option<Self> {
         // Wheat
         if let Some(age) = update.block_state.property::<WheatAge>() {
             Some(Crop {
@@ -123,7 +131,6 @@ impl Crop {
             let below_one_pos = update.pos.down(1);
             let below_two_pos = update.pos.down(2);
             let (below_one, below_two) = {
-                let world = client.world();
                 let lock = world.read();
                 (
                     lock.get_block_state(&below_one_pos),
