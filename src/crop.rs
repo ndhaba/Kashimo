@@ -135,7 +135,7 @@ impl Crop {
             }
             if below_one.unwrap().property::<SugarCaneAge>().is_none() {
                 return Some(Crop {
-                    pos: below_one_pos,
+                    pos: update.pos,
                     species: CropSpecies::SugarCane,
                     harvest_position: None,
                 });

@@ -3,18 +3,17 @@ use std::sync::Arc;
 use azalea::{protocol::packets::game::ClientboundGamePacket, Account, Client, Event};
 use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
-pub type KResult<T> = Result<T, Box<dyn std::error::Error>>;
+use crate::error::KResult;
 
 pub struct Kashimo {
     client: Client,
-    account: Account,
 }
 
 impl Kashimo {
     pub async fn connect(host: &str) -> KResult<(Arc<Kashimo>, UnboundedReceiver<Event>)> {
         let account = Account::offline("Kashimo");
         let (client, receiver) = Client::join(&account, host).await?;
-        let kashimo = Arc::new(Kashimo { client, account });
+        let kashimo = Arc::new(Kashimo { client });
         Ok((kashimo, receiver))
     }
 
@@ -30,7 +29,7 @@ impl Kashimo {
         })
     }
 
-    async fn handle_event(&self, event: Event) -> () {
+    async fn handle_event(&self, event: Event) {
         match event {
             Event::Chat(msg) => {
                 println!("{}", msg.message().to_ansi());
