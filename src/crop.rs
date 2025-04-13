@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use azalea::{
     blocks::properties::{
@@ -7,10 +7,15 @@ use azalea::{
     },
     protocol::packets::game::ClientboundBlockUpdate,
     world::Instance,
-    BlockPos,
+    BlockPos, Vec3,
 };
+use fixed::{types::extra::U0, FixedI32};
+use kiddo::fixed::{distance::Manhattan, kdtree::KdTree};
 use lock_api::RwLock;
 use parking_lot::RawRwLock;
+
+type CropAxis = FixedI32<U0>;
+type CropIdent = u32;
 
 pub enum CropSpecies {
     Wheat,
@@ -26,6 +31,7 @@ pub struct Crop {
     pub pos: BlockPos,
     pub species: CropSpecies,
     pub harvest_position: Option<BlockPos>,
+    identifier: CropIdent,
 }
 
 fn adjacent_position(pos: BlockPos, facing: FacingCardinal) -> BlockPos {
@@ -52,6 +58,7 @@ impl Crop {
                 } else {
                     None
                 },
+                identifier: 0,
             })
         }
         // Beetroots
@@ -64,6 +71,7 @@ impl Crop {
                 } else {
                     None
                 },
+                identifier: 0,
             })
         }
         // Potatoes
@@ -76,6 +84,7 @@ impl Crop {
                 } else {
                     None
                 },
+                identifier: 0,
             })
         }
         // Carrots
@@ -88,6 +97,7 @@ impl Crop {
                 } else {
                     None
                 },
+                identifier: 0,
             })
         }
         // Pumpkin Stem
@@ -106,6 +116,7 @@ impl Crop {
                         None
                     }
                 },
+                identifier: 0,
             })
         }
         // Melon Stem
@@ -124,6 +135,7 @@ impl Crop {
                         None
                     }
                 },
+                identifier: 0,
             })
         }
         // Sugar Cane
@@ -145,6 +157,7 @@ impl Crop {
                     pos: update.pos,
                     species: CropSpecies::SugarCane,
                     harvest_position: None,
+                    identifier: 0,
                 });
             }
             if below_two.is_none() || below_two.unwrap().property::<SugarCaneAge>().is_none() {
@@ -154,11 +167,89 @@ impl Crop {
                 pos: below_one_pos,
                 species: CropSpecies::SugarCane,
                 harvest_position: Some(update.pos),
+                identifier: 0,
             })
         }
         // Otherwise
         else {
             None
         }
+    }
+}
+
+pub struct CropRegistry {
+    crops: HashMap<u32, Crop>,
+    identifiers: HashMap<BlockPos, u32>,
+    positions: KdTree<CropAxis, u32, 3, 32, u32>,
+    world: Arc<RwLock<RawRwLock, Instance>>,
+    next_identifier: u32,
+}
+
+impl CropRegistry {
+    pub fn new(world: Arc<RwLock<RawRwLock, Instance>>) -> CropRegistry {
+        CropRegistry {
+            crops: HashMap::new(),
+            identifiers: HashMap::new(),
+            positions: KdTree::new(),
+            world,
+            next_identifier: 0,
+        }
+    }
+
+    pub fn handle_crop_update(&mut self, mut crop: Crop) {
+        if !self.identifiers.contains_key(&crop.pos) {
+            self.identifiers.insert(crop.pos, self.next_identifier);
+            self.next_identifier += 1;
+        }
+        crop.identifier = self.identifiers[&crop.pos];
+        if !self.crops.contains_key(&crop.identifier) {
+            let pos = [
+                CropAxis::from(crop.pos.x),
+                CropAxis::from(crop.pos.y),
+                CropAxis::from(crop.pos.z),
+            ];
+            self.positions.add(&pos, self.next_identifier);
+        }
+        self.crops.insert(crop.identifier, crop);
+    }
+
+    pub fn handle_block_removal(&mut self, position: BlockPos) {
+        if let Some(identifier) = self.identifiers.get(&position) {
+            if self.crops.remove(identifier).is_some() {
+                let pos = [
+                    CropAxis::from(position.x),
+                    CropAxis::from(position.y),
+                    CropAxis::from(position.z),
+                ];
+                self.positions.remove(&pos, *identifier);
+                return;
+            }
+        }
+        let below_one = position.down(1);
+        if let Some(identifier) = self.identifiers.get(&below_one) {
+            if let Some(crop) = self.crops.get_mut(identifier) {
+                if matches!(crop.species, CropSpecies::SugarCane) {
+                    crop.harvest_position = None;
+                }
+            }
+        }
+    }
+
+    pub fn nearest_harvest(&self, position: Vec3, radius: i32, excludes: &HashSet<BlockPos>) -> Option<BlockPos> {
+        let position = [
+            CropAxis::from(position.x as i32),
+            CropAxis::from(position.y as i32),
+            CropAxis::from(position.z as i32),
+        ];
+        let radius = CropAxis::from(radius);
+        for result in self.positions.within::<Manhattan>(&position, radius) {
+            let crop = self.crops.get(&result.item).unwrap();
+            if let Some(harvest_position) = crop.harvest_position {
+                if !excludes.contains(&harvest_position) {
+                    return Some(harvest_position);
+                }
+            }
+        }
+        return None;
     }
 }
