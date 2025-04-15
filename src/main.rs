@@ -3,6 +3,7 @@ use kashimo::Kashimo;
 
 mod crop;
 mod error;
+mod harvest;
 mod kashimo;
 
 #[tokio::main]
